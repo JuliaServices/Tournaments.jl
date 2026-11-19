@@ -393,7 +393,7 @@ Base.@kwdef struct BracketGame
     starts_at::Union{DateTime,Nothing} = nothing
     ends_at::Union{DateTime,Nothing} = nothing
     field::Union{String,Nothing} = nothing
-    slot::Int = 0
+    slot::Int
 end
 
 """
@@ -426,19 +426,19 @@ main bracket instead of waiting for its final. A timed bracket skips the fields
 that `held` books in each slot. With `starts_at = nothing` the bracket is untimed:
 games get slots and fields but no times.
 
-An empty plan or no fields gives an empty schedule. A timed bracket needs a
-positive `round_length_minutes`; a negative `rest_slots` or a repeated field id is
-an `ArgumentError`.
+An empty plan or no fields gives an empty schedule, whatever the other arguments.
+Otherwise a timed bracket needs a positive `round_length_minutes`, and a negative
+`rest_slots` or a repeated field id is an `ArgumentError`.
 """
 function schedule_bracket(plan::BracketPlan, starts_at::Union{DateTime,Nothing},
                           round_length_minutes::Int, fields::Vector{String};
                           held::HeldTime = HeldTime(), rest_slots::Int = 0)
+    isempty(plan.matches) && return BracketSchedule()
+    isempty(fields) && return BracketSchedule()
     starts_at === nothing || round_length_minutes > 0 ||
         throw(ArgumentError("A timed bracket needs a positive round length"))
     rest_slots >= 0 || throw(ArgumentError("rest_slots cannot be negative"))
     allunique(fields) || throw(ArgumentError("Field ids must be unique"))
-    isempty(plan.matches) && return BracketSchedule()
-    isempty(fields) && return BracketSchedule()
     matches = plan.matches
     round_length = Minute(round_length_minutes)
     # A game only feeds games added after it, so one backward pass finds the

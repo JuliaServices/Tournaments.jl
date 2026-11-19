@@ -107,7 +107,7 @@ import Tournaments as T
 
         # Two groups of 21 that have played every cross-group pair must each pair
         # inside the group, and an odd group can't, so no clean pairing exists.
-        # Searching every pairing would take hours; the step budget ends it at once.
+        # Backtracking through every pairing took hours; the matching check ends it at once.
         a = ["a$(i)" for i in 1:21]
         b = ["b$(i)" for i in 1:21]
         cross = Set{Tuple{String,String}}()
@@ -117,6 +117,20 @@ import Tournaments as T
         end
         pairs = T.swiss_pairings(vcat(a, b), cross)
         @test count(in(cross), pairs) == 1
+        @test sort!(collect(Iterators.flatten(pairs))) == sort!(vcat(a, b))
+        # Two groups of 17 with one cross-group pair still unplayed: the only clean
+        # round plays that pair and pairs the other 16 inside each group. Taking a2's
+        # first possible opponent, a1, leaves an odd group that can't pair, and
+        # backtracking through every pairing of that group took seconds.
+        a, b = a[1:17], b[1:17]
+        cross = Set{Tuple{String,String}}()
+        for x in a, y in b
+            (x, y) == ("a1", "b1") && continue
+            push!(cross, (x, y))
+            push!(cross, (y, x))
+        end
+        pairs = T.swiss_pairings(vcat(a, b), cross)
+        @test !any(in(cross), pairs)
         @test sort!(collect(Iterators.flatten(pairs))) == sort!(vcat(a, b))
     end
 
@@ -250,6 +264,8 @@ import Tournaments as T
         @test_throws ArgumentError T.schedule_bracket(plan, start, 60, fields(2); rest_slots = -1)
         @test_throws ArgumentError T.schedule_bracket(plan, start, 60, ["f1", "f1"])
         @test length(T.schedule_bracket(plan, nothing, 0, fields(1)).games) == length(plan.matches)
+        @test isempty(T.schedule_bracket(plan, start, 0, String[]).games)
+        @test isempty(T.schedule_bracket(T.BracketPlan(), start, 0, ["f1", "f1"]).games)
     end
 
     @testset "fields spread each team's games evenly and skip held time" begin
