@@ -108,9 +108,12 @@ the first-round byes when the count isn't a power of two.
 - `full_placement`: every round's losers keep playing, so every team gets a final
   place.
 
-Throws an `ArgumentError` for fewer than two seeds, an unknown option, an
-upper/lower split of fewer than four teams, or a fifth- or ninth-place game without
-the full round it needs.
+A double elimination already places everyone it can, and so does full placement,
+so neither combines with the other options; a third-place game needs four teams.
+
+Throws an `ArgumentError` for fewer than two seeds, a repeated seed, an unknown
+option or one of those combinations, an upper/lower split of fewer than four teams,
+or a fifth- or ninth-place game without the full round it needs.
 """
 function plan_bracket(seeds::Vector{String}; bracket_type::String = "single",
                       split_mode::String = "single", third_place::Bool = false,
@@ -121,6 +124,14 @@ function plan_bracket(seeds::Vector{String}; bracket_type::String = "single",
         throw(ArgumentError("bracket_type must be single or double"))
     split_mode in ("single", "upper_lower") ||
         throw(ArgumentError("split_mode must be single or upper_lower"))
+    allunique(seeds) || throw(ArgumentError("Each team can be seeded only once"))
+    third_place && length(seeds) < 4 &&
+        throw(ArgumentError("A third-place game needs at least four teams"))
+    bracket_type == "double" && (third_place || fifth_place || ninth_place || full_placement ||
+                                 split_mode != "single") &&
+        throw(ArgumentError("Double elimination already places everyone it can - drop the consolation and split options"))
+    full_placement && (third_place || fifth_place || ninth_place || split_mode != "single") &&
+        throw(ArgumentError("Full placement already includes every consolation game - drop the other options"))
     builder = _BracketBuilder()
     seed_refs = BracketFeeder[]
     for (index, team) in enumerate(seeds)
@@ -374,14 +385,15 @@ end
     BracketGame
 
 When and where one [`BracketPlan`](@ref) game plays: the game's index in the plan's
-`matches` (`plan_index`), its start and end (`nothing` for an untimed bracket), and
-its field.
+`matches` (`plan_index`), its start and end (`nothing` for an untimed bracket), its
+field, and its time slot, counted from 1 (games in one slot play together).
 """
 Base.@kwdef struct BracketGame
     plan_index::Int
     starts_at::Union{DateTime,Nothing} = nothing
     ends_at::Union{DateTime,Nothing} = nothing
     field::Union{String,Nothing} = nothing
+    slot::Int = 0
 end
 
 """
@@ -414,11 +426,17 @@ main bracket instead of waiting for its final. A timed bracket skips the fields
 that `held` books in each slot. With `starts_at = nothing` the bracket is untimed:
 games get slots and fields but no times.
 
-An empty plan or no fields gives an empty schedule.
+An empty plan or no fields gives an empty schedule. A timed bracket needs a
+positive `round_length_minutes`; a negative `rest_slots` or a repeated field id is
+an `ArgumentError`.
 """
 function schedule_bracket(plan::BracketPlan, starts_at::Union{DateTime,Nothing},
                           round_length_minutes::Int, fields::Vector{String};
                           held::HeldTime = HeldTime(), rest_slots::Int = 0)
+    starts_at === nothing || round_length_minutes > 0 ||
+        throw(ArgumentError("A timed bracket needs a positive round length"))
+    rest_slots >= 0 || throw(ArgumentError("rest_slots cannot be negative"))
+    allunique(fields) || throw(ArgumentError("Field ids must be unique"))
     isempty(plan.matches) && return BracketSchedule()
     isempty(fields) && return BracketSchedule()
     matches = plan.matches
@@ -467,6 +485,7 @@ function schedule_bracket(plan::BracketPlan, starts_at::Union{DateTime,Nothing},
             starts_at = game_starts_at,
             ends_at = game_starts_at === nothing ? nothing : game_starts_at + round_length,
             field = fields[field_of[index]],
+            slot = slot_of[index],
         ))
     end
     slot_count = length(games_in_slot)

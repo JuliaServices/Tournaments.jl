@@ -46,6 +46,11 @@ possible opponents at each step, so a first-come choice can't strand the last tw
 teams in a rematch while a clean pairing exists. When none exists, it keeps the
 standings order and pairs each team with the next one it hasn't played, or the next
 one when it has played them all.
+
+Some histories make proving that no clean pairing exists take exponential time,
+such as two odd-sized groups that have played every cross-group pair. So the search
+stops after 100,000 steps and uses that fallback. Real fields need far fewer: the
+hardest Swiss round in the test corpus takes 15.
 """
 function swiss_pairings(ordered::Vector{String},
                         played::Set{Tuple{String,String}})
@@ -55,7 +60,8 @@ function swiss_pairings(ordered::Vector{String},
     # even when another complete pairing exists. Search the no-rematch graph
     # first, choosing the most constrained team at each step. Swiss fields are
     # small and the graph is dense in the rounds where this path is useful.
-    _pair_swiss_without_rematches!(pairs, copy(ordered), played) && return pairs
+    _pair_swiss_without_rematches!(pairs, copy(ordered), played, Ref(_SWISS_SEARCH_STEPS)) &&
+        return pairs
 
     # A rematch-free round is impossible. Preserve standings order and avoid a
     # rematch for each team when a local alternative remains.
@@ -71,12 +77,19 @@ function swiss_pairings(ordered::Vector{String},
     return pairs
 end
 
+# ponytail: a step budget instead of a matching feasibility check (Edmonds' blossom);
+# add that check if large Swiss fields with dense histories become common.
+const _SWISS_SEARCH_STEPS = 100_000
+
 function _pair_swiss_without_rematches!(
     pairs::Vector{Tuple{String,String}},
     remaining::Vector{String},
     played::Set{Tuple{String,String}},
+    steps::Base.RefValue{Int},
 )::Bool
     isempty(remaining) && return true
+    steps[] -= 1
+    steps[] < 0 && return false
     chosen_index = 1
     candidate_indexes = Int[]
     smallest_count = typemax(Int)
@@ -105,7 +118,7 @@ function _pair_swiss_without_rematches!(
             push!(next_remaining, remaining[index])
         end
         push!(pairs, (first_id, opponent_id))
-        _pair_swiss_without_rematches!(pairs, next_remaining, played) && return true
+        _pair_swiss_without_rematches!(pairs, next_remaining, played, steps) && return true
         pop!(pairs)
     end
     return false

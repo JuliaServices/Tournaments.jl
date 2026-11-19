@@ -67,8 +67,14 @@ short of their games, in round order from where the cycle stopped, so teams that
 have not met yet in the cycle play first. When the target makes the total odd, one
 short team plays a team that already has its games. Those games come out of round
 order, so the team that has hosted less so far hosts.
+
+A negative `games_per_team`, or a positive one with fewer than two teams, is an
+`ArgumentError`.
 """
 function season_rounds(team_ids::Vector{String}, games_per_team::Int)
+    games_per_team >= 0 || throw(ArgumentError("games_per_team cannot be negative"))
+    games_per_team == 0 || length(team_ids) >= 2 ||
+        throw(ArgumentError("A season needs at least two teams"))
     n = length(team_ids)
     total_games = ceil(Int, n * games_per_team / 2)
     base = round_robin(team_ids)
