@@ -99,6 +99,16 @@ matching in O(n³) for `n` teams.
 function _has_clean_pairing(teams::Vector{String}, played::Set{Tuple{String,String}})::Bool
     n = length(teams)
     isodd(n) && return false
+    # Most histories leave plenty of unplayed pairs, so pairing each team with the
+    # next one it hasn't played usually covers everyone without the full search.
+    unpaired = copy(teams)
+    while !isempty(unpaired)
+        team = popfirst!(unpaired)
+        opponent = findfirst(id -> !((team, id) in played) && !((id, team) in played), unpaired)
+        opponent === nothing && break
+        deleteat!(unpaired, opponent)
+        isempty(unpaired) && return true
+    end
     unplayed = Bool[i != j && !((teams[i], teams[j]) in played) && !((teams[j], teams[i]) in played)
                     for i in 1:n, j in 1:n]
     mate = zeros(Int, n)       # each team's partner in the matching, 0 for none
