@@ -1,0 +1,23 @@
+name = "Tournaments"
+uuid = "a2490699-5a5f-4f52-9dee-69f0302e2c54"
+version = "0.1.0"
+authors = ["Jacob Quinn and contributors"]
+
+[deps]
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+
+[compat]
+CodecZlib = "0.7"
+Dates = "1"
+JSON = "1"
+SHA = "0.7, 1"
+julia = "1.12"
+
+[extras]
+CodecZlib = "944b1d66-785c-5afd-91f1-9de20f533193"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["CodecZlib", "JSON", "SHA", "Test"]
