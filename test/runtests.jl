@@ -87,6 +87,10 @@ import Tournaments as T
             @test minimum(values(counts)) == games_per_team
             @test count(>(games_per_team), values(counts)) == (isodd(n * games_per_team) ? 1 : 0)
         end
+        # A target no schedule can meet.
+        @test_throws ArgumentError T.season_rounds(["a", "b"], -1)
+        @test_throws ArgumentError T.season_rounds(["a"], 2)
+        @test T.season_rounds(["a"], 0) == (Vector{Tuple{String,String}}[], 0)
     end
 
     @testset "Swiss pairing avoids avoidable rematches" begin
@@ -100,6 +104,34 @@ import Tournaments as T
         # With every pair already met, it keeps the standings order.
         everyone = Set((a, b) for a in ("a", "b", "c", "d") for b in ("a", "b", "c", "d") if a != b)
         @test T.swiss_pairings(["a", "b", "c", "d"], everyone) == [("a", "b"), ("c", "d")]
+
+        # Two groups of 21 that have played every cross-group pair must each pair
+        # inside the group, and an odd group can't, so no clean pairing exists.
+        # Backtracking through every pairing took hours; the matching check ends it at once.
+        a = ["a$(i)" for i in 1:21]
+        b = ["b$(i)" for i in 1:21]
+        cross = Set{Tuple{String,String}}()
+        for x in a, y in b
+            push!(cross, (x, y))
+            push!(cross, (y, x))
+        end
+        pairs = T.swiss_pairings(vcat(a, b), cross)
+        @test count(in(cross), pairs) == 1
+        @test sort!(collect(Iterators.flatten(pairs))) == sort!(vcat(a, b))
+        # Two groups of 17 with one cross-group pair still unplayed: the only clean
+        # round plays that pair and pairs the other 16 inside each group. Taking a2's
+        # first possible opponent, a1, leaves an odd group that can't pair, and
+        # backtracking through every pairing of that group took seconds.
+        a, b = a[1:17], b[1:17]
+        cross = Set{Tuple{String,String}}()
+        for x in a, y in b
+            (x, y) == ("a1", "b1") && continue
+            push!(cross, (x, y))
+            push!(cross, (y, x))
+        end
+        pairs = T.swiss_pairings(vcat(a, b), cross)
+        @test !any(in(cross), pairs)
+        @test sort!(collect(Iterators.flatten(pairs))) == sort!(vcat(a, b))
     end
 
     @testset "Swiss rounds: the split first round and byes" begin
@@ -157,6 +189,18 @@ import Tournaments as T
         @test_throws ArgumentError T.plan_bracket(["a", "b"]; bracket_type = "triple")
         @test_throws ArgumentError T.plan_bracket(["a", "b", "c"]; split_mode = "upper_lower")
         @test_throws ArgumentError T.plan_bracket(["t$(i)" for i in 1:6]; fifth_place = true)
+        # A repeated seed, or options that would place the same teams twice.
+        @test_throws ArgumentError T.plan_bracket(["a", "b", "a", "c"])
+        @test_throws ArgumentError T.plan_bracket(["a", "b", "c"]; third_place = true)
+        sixteen = ["t$(i)" for i in 1:16]   # enough for each consolation game on its own
+        for options in ((; third_place = true), (; fifth_place = true), (; ninth_place = true),
+                        (; full_placement = true), (; split_mode = "upper_lower"))
+            @test_throws ArgumentError T.plan_bracket(sixteen; bracket_type = "double", options...)
+        end
+        for options in ((; third_place = true), (; fifth_place = true), (; ninth_place = true),
+                        (; split_mode = "upper_lower"))
+            @test_throws ArgumentError T.plan_bracket(sixteen; full_placement = true, options...)
+        end
     end
 
     @testset "consolation games take the losers of the round they name" begin
@@ -208,6 +252,20 @@ import Tournaments as T
         @test all(game.starts_at === nothing && game.field !== nothing for game in untimed.games)
         @test untimed.scheduled_ends_at === nothing
         @test isempty(T.schedule_bracket(plan, start, 60, String[]).games)
+        # Each game's slot, timed or not.
+        plan = T.plan_bracket(["t$(i)" for i in 1:8]; third_place = true)
+        timed = T.schedule_bracket(plan, start, 60, fields(2))
+        untimed = T.schedule_bracket(plan, nothing, 60, fields(2))
+        @test all(game.starts_at == start + Hour(game.slot - 1) for game in timed.games)
+        @test [game.slot for game in untimed.games] == [game.slot for game in timed.games]
+        @test maximum(game.slot for game in untimed.games) == untimed.time_slot_count
+        # Zero-length rounds, negative rest, and a repeated field would double-book.
+        @test_throws ArgumentError T.schedule_bracket(plan, start, 0, fields(2))
+        @test_throws ArgumentError T.schedule_bracket(plan, start, 60, fields(2); rest_slots = -1)
+        @test_throws ArgumentError T.schedule_bracket(plan, start, 60, ["f1", "f1"])
+        @test length(T.schedule_bracket(plan, nothing, 0, fields(1)).games) == length(plan.matches)
+        @test isempty(T.schedule_bracket(plan, start, 0, String[]).games)
+        @test isempty(T.schedule_bracket(T.BracketPlan(), start, 0, ["f1", "f1"]).games)
     end
 
     @testset "fields spread each team's games evenly and skip held time" begin
@@ -255,6 +313,12 @@ import Tournaments as T
         games = round_robin_games(8, 2, T.HeldTime())
         @test T.assign_fields(games, ["f1", "f2"]) == T.assign_fields(copy(games), ["f1", "f2"])
         @test_throws ArgumentError T.assign_fields(games[1:2], ["f1"])
+        # Games that overlap without starting together, and repeated field ids.
+        game(home, away, from, hours) = (; home, away, starts_at = start + Hour(from),
+                                         ends_at = start + Hour(from + hours))
+        @test_throws ArgumentError T.assign_fields([game("a", "b", 0, 2), game("c", "d", 1, 2)], ["f1", "f2"])
+        @test T.assign_fields([game("a", "b", 0, 1), game("c", "d", 1, 1)], ["f1"]) == ["f1", "f1"]
+        @test_throws ArgumentError T.assign_fields([game("a", "b", 0, 1)], ["f1", "f1"])
         @test T.field_free(T.HeldTime("f1" => [(start, start + Hour(1))]), "f1", start + Hour(1), start + Hour(2))
     end
 

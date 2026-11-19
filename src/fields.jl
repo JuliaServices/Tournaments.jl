@@ -48,10 +48,15 @@ or more fields, such as ten teams on five fields, the search can also end one ga
 outside that range even though an even split exists.
 
 A field that `held` books during a game's time never gets that game. At every start
-time, there must be at least as many free fields as games starting then.
+time, there must be at least as many free fields as games starting then. Games that
+overlap must start at the same time: the search only trades fields among games that
+start together, so a game still running when a later one starts is an
+`ArgumentError`, as are repeated field ids.
 """
 function assign_fields(games::AbstractVector, field_ids::Vector{String};
                        held::HeldTime = HeldTime())
+    allunique(field_ids) || throw(ArgumentError("Field ids must be unique"))
+    _check_no_staggered_overlap(games)
     field_count = length(field_ids)
     team_index = Dict{String,Int}()
     start_index = Dict{DateTime,Int}()
@@ -127,6 +132,20 @@ function assign_fields(games::AbstractVector, field_ids::Vector{String};
         assigned[index] = field_ids[field]
     end
     return assigned
+end
+
+"Throw unless every game still running at a later game's start began at that same time."
+function _check_no_staggered_overlap(games::AbstractVector)
+    latest_end = Dict{DateTime,DateTime}()   # start => the latest end of games starting then
+    for game in games
+        latest_end[game.starts_at] = max(get(latest_end, game.starts_at, game.ends_at), game.ends_at)
+    end
+    starts = sort!(collect(keys(latest_end)))
+    for index in 1:(length(starts) - 1)
+        latest_end[starts[index]] <= starts[index + 1] || throw(ArgumentError(
+            "Games that overlap must start at the same time"))
+    end
+    return nothing
 end
 
 "Field use while `assign_fields` searches; teams and fields are numbered from 1."
